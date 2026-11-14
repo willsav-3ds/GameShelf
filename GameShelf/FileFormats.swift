@@ -140,6 +140,122 @@ indirect enum VDF {
     }
 }
 
+/// Steam's cache of what it knows about the apps in your library: appcache/appinfo.vdf.
+/// It's the binary form of KeyValues, and newer versions keep every key in a table at the end of the file.
+enum SteamAppInfo {
+    struct App {
+        var id: String
+        var name: String
+        /// "Game", "Tool", "DLC" and so on.
+        var type: String
+        /// Comma-separated: "windows,macos,linux".
+        var systems: String
+    }
+
+    static func read(_ url: URL) -> [App] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        var reader = Reader(bytes: Array(data))
+        return reader.readApps()
+    }
+
+    private struct Reader {
+        let bytes: [UInt8]
+        var position = 0
+        var keys: [String]?
+
+        mutating func readApps() -> [App] {
+            guard let magic = int32(), int32() != nil else { return [] }
+            // What sits between an entry's size and its data: state, date, token, hash and change number,
+            // plus a second hash from version 28.
+            let headerLength: Int
+            switch magic {
+            case 0x0756_4427:
+                headerLength = 40
+            case 0x0756_4428:
+                headerLength = 60
+            case 0x0756_4429:
+                headerLength = 60
+                guard let low = int32(), let high = int32(), high == 0, Int(low) < bytes.count else { return [] }
+                let resume = position
+                position = Int(low)
+                guard let count = int32(), Int(count) <= bytes.count else { return [] }
+                var table: [String] = []
+                for _ in 0..<count {
+                    guard let key = text() else { return [] }
+                    table.append(key.lowercased())
+                }
+                keys = table
+                position = resume
+            default:
+                return []
+            }
+
+            var apps: [App] = []
+            while let id = int32(), id != 0, let size = int32() {
+                let next = position + Int(size)
+                guard next <= bytes.count else { break }
+                position += headerLength
+                if let common = object()?["appinfo"]?["common"], let name = common["name"]?.string {
+                    apps.append(App(
+                        id: String(id), name: name,
+                        type: common["type"]?.string ?? "", systems: common["oslist"]?.string ?? ""
+                    ))
+                }
+                position = next
+            }
+            return apps
+        }
+
+        private mutating func object() -> VDF? {
+            var children: [String: VDF] = [:]
+            while position < bytes.count {
+                let type = bytes[position]
+                position += 1
+                if type == 8 { return .object(children) }
+                let key: String
+                if let keys {
+                    guard let index = int32(), Int(index) < keys.count else { return nil }
+                    key = keys[Int(index)]
+                } else {
+                    guard let name = text() else { return nil }
+                    key = name.lowercased()
+                }
+                switch type {
+                case 0:
+                    guard let child = object() else { return nil }
+                    children[key] = child
+                case 1:
+                    guard let value = text() else { return nil }
+                    children[key] = .string(value)
+                case 2:
+                    guard let value = int32() else { return nil }
+                    children[key] = .string(String(value))
+                case 7:
+                    guard int32() != nil, int32() != nil else { return nil }
+                default:
+                    return nil
+                }
+            }
+            return nil
+        }
+
+        private mutating func int32() -> UInt32? {
+            guard position + 4 <= bytes.count else { return nil }
+            let value = (0..<4).reduce(UInt32(0)) { $0 | UInt32(bytes[position + $1]) << UInt32($1 * 8) }
+            position += 4
+            return value
+        }
+
+        /// A null-terminated string.
+        private mutating func text() -> String? {
+            guard position < bytes.count, let end = bytes[position...].firstIndex(of: 0) else { return nil }
+            let value = String(decoding: bytes[position..<end], as: UTF8.self)
+            position = end + 1
+            return value
+        }
+    }
+}
+
 /// Finds a disc's serial (the key playtime is stored under) by reading SYSTEM.CNF from
 /// the ISO9660 filesystem. Compressed formats such as CHD return nil.
 enum DiscSerial {

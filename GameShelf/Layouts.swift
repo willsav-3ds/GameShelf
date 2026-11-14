@@ -159,11 +159,13 @@ private final class ShiftScrollMonitor {
 
 // MARK: Carousel
 
-/// Big covers sliding past the centre, one collection at a time.
+/// Big covers sliding past the centre, one collection at a time. Fanned, they overlap and swing
+/// around a point below the window like a hand of cards.
 struct CarouselLayout: View {
     @Environment(\.theme) private var theme
     @Environment(\.gameActions) private var actions
     let context: LayoutContext
+    var fanned = false
     @State private var scrolledID: String?
 
     var body: some View {
@@ -182,7 +184,7 @@ struct CarouselLayout: View {
 
                 if let collection {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(alignment: .center, spacing: 26) {
+                        LazyHStack(alignment: .center, spacing: fanned ? -height * 0.08 : 26) {
                             ForEach(collection.games) { game in
                                 CoverCard(
                                     game: game,
@@ -191,14 +193,21 @@ struct CarouselLayout: View {
                                     isFocused: context.isFocused(game, in: collection.id),
                                     showsTitle: false
                                 )
-                                .visualEffect { content, geometry in
+                                .visualEffect { [fanned] content, geometry in
                                     let frame = geometry.frame(in: .scrollView)
                                     let bounds = geometry.bounds(of: .scrollView) ?? frame
-                                    let distance = min(abs(frame.midX - bounds.midX) / max(bounds.width / 2, 1), 1)
+                                    let offset = (frame.midX - bounds.midX) / max(bounds.width / 2, 1)
+                                    let distance = min(abs(offset), 1)
+                                    // The card in the middle stands straight even if it's a little off centre.
+                                    let swing = max(min(abs(offset), 1.2) - 0.06, 0) * (offset < 0 ? -17 : 17)
                                     return content
-                                        .scaleEffect(1 - distance * 0.28)
-                                        .opacity(1 - distance * 0.55)
+                                        .scaleEffect(1 - distance * (fanned ? 0.16 : 0.28))
+                                        .rotationEffect(.degrees(fanned ? swing : 0), anchor: .bottom)
+                                        .offset(y: fanned ? distance * distance * height * 0.2 : 0)
+                                        .opacity(1 - distance * (fanned ? 0.3 : 0.55))
                                 }
+                                // Cards overlap in a fan, so the selected one comes to the front.
+                                .zIndex(context.isFocused(game, in: collection.id) ? 1 : 0)
                                 .id(LayoutContext.scrollID(collection.id, game))
                             }
                         }
@@ -206,9 +215,10 @@ struct CarouselLayout: View {
                         .padding(.vertical, 30)
                     }
                     .scrollTargetBehavior(.viewAligned)
+                    .scrollClipDisabled(fanned)
                     .safeAreaPadding(.horizontal, max(proxy.size.width / 2 - height * 0.4, 0))
                     .scrollPosition(id: $scrolledID, anchor: .center)
-                    .frame(height: height + 70)
+                    .frame(height: height + (fanned ? 70 + height * 0.2 : 70))
                     .id(collection.id)
                     .onAppear { scrolledID = context.focusedGame.map { LayoutContext.scrollID(collection.id, $0) } }
                     .onChange(of: context.focusedGame?.id) { _, _ in
@@ -546,6 +556,115 @@ private struct WoodGrain: View {
                     control2: CGPoint(x: start + 200, y: y + next() * 3 - 1.5)
                 )
                 context.stroke(line, with: .color(.black.opacity(0.1 + next() * 0.14)), lineWidth: 0.5 + next() * 0.7)
+            }
+        }
+    }
+}
+
+// MARK: Scattered
+
+/// Covers strewn across a table: each sits at its own angle and height, overlapping its neighbours.
+/// The selected one straightens up and comes to the top of the pile.
+struct ScatterLayout: View {
+    @Environment(\.theme) private var theme
+    let context: LayoutContext
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollViewReader { scroller in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 46) {
+                        ForEach(context.collections) { collection in
+                            ScatterSection(collection: collection, context: context, availableWidth: proxy.size.width)
+                                .id(collection.id.key)
+                        }
+                    }
+                    .padding(.vertical, 34)
+                }
+                .onChange(of: context.focusedCollection) { _, id in
+                    // No anchor: only scroll as far as needed to bring the pile into view.
+                    guard let id, !context.focusedByPointer else { return }
+                    withAnimation(theme.animations ? .easeInOut(duration: 0.3) : nil) {
+                        scroller.scrollTo(id.key)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct ScatterSection: View {
+    @Environment(\.theme) private var theme
+    let collection: GameCollection
+    let context: LayoutContext
+    let availableWidth: CGFloat
+
+    private let sideInset: CGFloat = 46
+    private let overlap: CGFloat = 10
+    private var height: CGFloat { 190 * theme.coverScale }
+
+    private func width(of game: Game) -> CGFloat { height * game.platform.caseAspect }
+
+    /// A stable value in -1...1 for a game, so the mess looks the same every launch.
+    private func jitter(_ game: Game, _ salt: Int) -> Double {
+        let total = game.id.unicodeScalars.reduce(salt &* 7919) { ($0 &* 31 &+ Int($1.value)) & 0xFFFFF }
+        return Double(total % 2001) / 1000 - 1
+    }
+
+    /// Fills each row with as many covers as fit, since every platform's case is a different width.
+    private var rows: [[Game]] {
+        let usable = max(availableWidth - sideInset * 2 - 60, 200)
+        var rows: [[Game]] = [[]]
+        var used: CGFloat = 0
+        for game in collection.games {
+            let next = width(of: game) - overlap
+            if used + next > usable, !rows[rows.count - 1].isEmpty {
+                rows.append([])
+                used = 0
+            }
+            rows[rows.count - 1].append(game)
+            used += next
+        }
+        return rows
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(collection.title)
+                        .font(theme.font(.title, weight: .bold))
+                    Text("\(collection.games.count)")
+                        .font(theme.font(.callout))
+                        .foregroundStyle(theme.secondaryText.color)
+                }
+                // A stroke that trails off, like a line drawn by hand.
+                LinearGradient(colors: [theme.accent.color, theme.accent.color.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 260, height: 2)
+            }
+            .rotationEffect(.degrees(-1.5), anchor: .leading)
+            .padding(.leading, sideInset)
+
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                HStack(alignment: .center, spacing: -overlap) {
+                    ForEach(row) { game in
+                        let isFocused = context.isFocused(game, in: collection.id)
+                        CoverCard(
+                            game: game,
+                            collection: collection.id,
+                            size: CGSize(width: width(of: game), height: height),
+                            isFocused: isFocused,
+                            showsTitle: false
+                        )
+                        .rotationEffect(.degrees(isFocused ? 0 : jitter(game, 1) * 9))
+                        .offset(y: isFocused ? -6 : jitter(game, 2) * 22)
+                        .zIndex(isFocused ? 2 : jitter(game, 3))
+                        .animation(theme.animations ? .spring(duration: 0.3, bounce: 0.35) : nil, value: isFocused)
+                    }
+                }
+                .padding(.vertical, 24)
+                // Rows start at different points so no edge lines up.
+                .padding(.leading, sideInset + (index % 2 == 0 ? 0 : 38) + CGFloat(index % 3) * 9)
             }
         }
     }

@@ -102,6 +102,7 @@ final class LibraryStore {
     var allCollectionIDs: [CollectionID] {
         var defaults: [CollectionID] = [.recent, .favorites]
         defaults += Platform.allCases.map(CollectionID.platform)
+        defaults.append(.available)
         defaults += state.collections.map { .custom($0.id) }
         defaults.append(.all)
         let position = Dictionary(uniqueKeysWithValues: state.collectionOrder.enumerated().map { ($1, $0) })
@@ -124,14 +125,16 @@ final class LibraryStore {
         let matches = visibleGames.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
         switch collection {
         case .all:
-            return sort(matches, by: order)
+            return sort(matches.filter(\.isInstalled), by: order)
         case .favorites:
             return sort(matches.filter { state.favorites.contains($0.id) }, by: order)
         case .recent:
             // Always newest first, whatever the sort setting: it's a "continue playing" row.
-            return Array(sort(matches.filter { $0.lastPlayed != nil }, by: .recent).prefix(20))
+            return Array(sort(matches.filter { $0.lastPlayed != nil && $0.isInstalled }, by: .recent).prefix(20))
+        case .available:
+            return sort(matches.filter { !$0.isInstalled }, by: order)
         case .platform(let platform):
-            return sort(matches.filter { $0.platform == platform }, by: order)
+            return sort(matches.filter { $0.platform == platform && $0.isInstalled }, by: order)
         case .custom(let id):
             let members = Set(state.collections.first { $0.id == id }?.gameIDs ?? [])
             return sort(matches.filter { members.contains($0.id) }, by: order)
@@ -143,6 +146,7 @@ final class LibraryStore {
         case .all: "All Games"
         case .favorites: "Favorites"
         case .recent: "Continue Playing"
+        case .available: "Ready to Install"
         case .platform(let platform): platform.title
         case .custom(let id): state.collections.first { $0.id == id }?.name ?? "Collection"
         }
@@ -153,6 +157,7 @@ final class LibraryStore {
         case .all: "square.grid.2x2"
         case .favorites: "star"
         case .recent: "clock.arrow.circlepath"
+        case .available: "arrow.down.circle"
         case .platform(let platform): platform.symbol
         case .custom(let id): state.collections.first { $0.id == id }?.symbol ?? "folder"
         }
@@ -347,7 +352,8 @@ final class LibraryStore {
         do {
             switch game.launch {
             case .steam(let appID):
-                guard let url = URL(string: "steam://run/\(appID)") else { return }
+                // Steam asks where to put a game that isn't installed, then downloads it.
+                guard let url = URL(string: "steam://\(game.isInstalled ? "run" : "install")/\(appID)") else { return }
                 NSWorkspace.shared.open(url)
             case .app(let url):
                 track(try await launch(appAt: url, arguments: []), game: game)

@@ -98,6 +98,8 @@ struct Game: Identifiable, Hashable, Sendable {
     var localCoverFolder: URL?
     var playtime: TimeInterval = 0
     var lastPlayed: Date?
+    /// False for a Steam game you own but haven't downloaded. Playing it asks Steam to install it.
+    var isInstalled = true
 
     /// Playtime the emulator or Steam records itself. Everything else is timed by GameShelf.
     var tracksOwnPlaytime: Bool {
@@ -151,6 +153,8 @@ enum GameTitle {
 /// A collection is any list of games you can browse: a platform, favorites, recents or one you made.
 enum CollectionID: Hashable, Sendable {
     case all, favorites, recent
+    /// Steam games you own that aren't downloaded yet.
+    case available
     case platform(Platform)
     case custom(UUID)
 
@@ -160,6 +164,7 @@ enum CollectionID: Hashable, Sendable {
         case .all: "all"
         case .favorites: "favorites"
         case .recent: "recent"
+        case .available: "available"
         case .platform(let platform): "platform:\(platform.rawValue)"
         case .custom(let id): "custom:\(id.uuidString)"
         }

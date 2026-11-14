@@ -121,6 +121,7 @@ private struct AppearanceSettings: View {
                     ForEach(Theme.Ambience.allCases) { Text($0.label).tag($0) }
                 }
                 .disabled(!theme.animations)
+                Slider(value: binding(\.vignette), in: 0...0.9) { Text("Edge shadow") }
                 if theme.backdrop == .image {
                     LabeledContent("Image") {
                         HStack {
@@ -184,6 +185,8 @@ private struct ThemeSwatch: View {
         case .carousel: "rectangle.stack"
         case .grid: "square.grid.3x3"
         case .shelf: "books.vertical"
+        case .fan: "rectangle.portrait.on.rectangle.portrait.angled"
+        case .scatter: "square.on.square.dashed"
         }
     }
 

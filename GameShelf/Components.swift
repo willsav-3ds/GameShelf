@@ -163,6 +163,17 @@ struct CoverCard: View {
                             .padding(6)
                     }
                 }
+                .overlay(alignment: .topLeading) {
+                    if !game.isInstalled {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(5)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .padding(6)
+                            .accessibilityLabel("Not installed")
+                    }
+                }
                 .overlay {
                     RoundedRectangle(cornerRadius: theme.cornerRadius)
                         .strokeBorder(highlightBorder, lineWidth: isFocused ? 3 : 0.5)
@@ -217,7 +228,7 @@ struct GameMenu: View {
     let game: Game
 
     var body: some View {
-        Button("Play") { actions.play(game) }
+        Button(game.isInstalled ? "Play" : "Install with Steam") { actions.play(game) }
         Button("Show Details") { actions.open(game) }
         Divider()
         Button(library.isFavorite(game) ? "Remove from Favorites" : "Add to Favorites") {
@@ -284,6 +295,12 @@ struct ThemeBackdrop: View {
                 theme.background.color
             }
             AmbientLayer(pointer: pointer)
+            if theme.vignette > 0 {
+                EllipticalGradient(
+                    colors: [.clear, .black.opacity(theme.vignette)],
+                    center: .center, startRadiusFraction: 0.3, endRadiusFraction: 0.8
+                )
+            }
             // Keeps text readable where rows sit near the bottom.
             LinearGradient(
                 colors: [.clear, theme.backgroundEnd.color.opacity(0.85)],
@@ -314,6 +331,7 @@ struct GameStats {
 
     static func line(_ game: Game, showPlaytime: Bool) -> String {
         var parts = [game.platform.title]
+        if !game.isInstalled { parts.append("Not installed") }
         if showPlaytime {
             parts += [playtime(game), lastPlayed(game)].compactMap { $0 }
         }
@@ -360,7 +378,7 @@ struct GameButtons: View {
     var body: some View {
         HStack(spacing: 10) {
             Button { actions.play(game) } label: {
-                Label("Play", systemImage: "play.fill")
+                Label(game.isInstalled ? "Play" : "Install", systemImage: game.isInstalled ? "play.fill" : "arrow.down.circle.fill")
                     .font(theme.font(.body, weight: .semibold))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 9)
@@ -368,7 +386,7 @@ struct GameButtons: View {
                     .background(theme.accent.color, in: Capsule())
             }
             .buttonStyle(.plain)
-            .help("Play (Space)")
+            .help(game.isInstalled ? "Play (Space)" : "Install with Steam (Space)")
 
             Button { actions.open(game) } label: {
                 Label("Details", systemImage: "info.circle")

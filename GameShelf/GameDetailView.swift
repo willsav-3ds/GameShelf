@@ -70,7 +70,7 @@ struct GameDetailView: View {
                         Task { await library.play(game, disc: disc) }
                         dismiss()
                     } label: {
-                        Label("Play", systemImage: "play.fill")
+                        Label(game.isInstalled ? "Play" : "Install", systemImage: game.isInstalled ? "play.fill" : "arrow.down.circle.fill")
                             .frame(minWidth: 110)
                     }
                     .controlSize(.large)

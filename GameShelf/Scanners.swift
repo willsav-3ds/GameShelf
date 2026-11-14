@@ -158,7 +158,7 @@ enum LibraryScanner {
     // MARK: Steam
 
     /// Tools and runtimes Steam installs alongside games.
-    private static let steamNonGames: Set<String> = ["431730", "228980", "1070560", "1391110", "1628350"]
+    private static let steamNonGames: Set<String> = ["431730", "228980", "1070560", "1391110", "1628350", "480"]
 
     private static func scanSteam() -> [Game] {
         let steam = appSupport.appendingPathComponent("Steam")
@@ -198,6 +198,23 @@ enum LibraryScanner {
                     lastPlayed: playtimes[appID]?.lastPlayed
                 )
             }
+        }
+
+        // Steam's own cache lists the rest of your library. Only games with a Mac version can be installed here.
+        for app in SteamAppInfo.read(steam.appendingPathComponent("appcache/appinfo.vdf")) {
+            guard games[app.id] == nil, !steamNonGames.contains(app.id), app.type.lowercased() == "game",
+                  app.systems.lowercased().split(separator: ",").contains("macos") else { continue }
+            games[app.id] = Game(
+                id: "steam:\(app.id)",
+                title: app.name,
+                platform: .steam,
+                launch: .steam(appID: app.id),
+                art: .steam(appID: app.id),
+                sourceLabel: "Steam · Not installed",
+                playtime: playtimes[app.id]?.seconds ?? 0,
+                lastPlayed: playtimes[app.id]?.lastPlayed,
+                isInstalled: false
+            )
         }
         return Array(games.values)
     }

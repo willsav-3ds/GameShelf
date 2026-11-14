@@ -14,9 +14,13 @@ brew install --cask gameshelf
 
 Requires macOS 27 on Apple silicon.
 
+## Steam
+
+Installed Steam games appear alongside everything else. Mac games you own but haven't downloaded are listed under "Ready to Install", and choosing one hands it to Steam to install. Rescan afterwards to move it into your library.
+
 ## Themes
 
-Eleven themes are built in, across four layouts: Showcase, Carousel, Grid and Bookshelf. Five of them have a moving backdrop that reacts to the pointer: Deep Space, Outrun, Mainframe, Campfire and Abyss.
+Fifteen themes are built in, across six layouts: Showcase, Carousel, Grid, Bookshelf, Fan and Scattered. Nine of them have a moving backdrop that reacts to the pointer, including four dark fantasy themes: Blood Moon, Lanternlight, Ashen and Old Cathedral.
 
 Covers tilt under the pointer, and the cover in a game's details can be grabbed and turned.
 

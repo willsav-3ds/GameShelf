@@ -55,6 +55,8 @@ struct LibraryView: View {
             switch theme.layout {
             case .showcase: ShowcaseLayout(context: context)
             case .carousel: CarouselLayout(context: context)
+            case .fan: CarouselLayout(context: context, fanned: true)
+            case .scatter: ScatterLayout(context: context)
             case .grid: GridLayout(context: context)
             case .shelf: ShelfLayout(context: context)
             }

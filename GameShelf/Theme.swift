@@ -13,6 +13,10 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
         case grid
         /// Covers standing on wooden shelves.
         case shelf
+        /// A hand of cards fanned in an arc, one collection at a time.
+        case fan
+        /// Covers strewn across a table at odd angles.
+        case scatter
 
         var id: String { rawValue }
 
@@ -22,6 +26,8 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
             case .carousel: "Carousel"
             case .grid: "Grid"
             case .shelf: "Bookshelf"
+            case .fan: "Fan"
+            case .scatter: "Scattered"
             }
         }
 
@@ -31,6 +37,8 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
             case .carousel: "Big covers that slide past, one collection at a time."
             case .grid: "Collections in a sidebar, a dense grid and a details panel."
             case .shelf: "Game cases standing on wooden shelves."
+            case .fan: "A hand of covers fanned in an arc, one collection at a time."
+            case .scatter: "Covers strewn across a table at odd angles, nothing lined up."
             }
         }
     }
@@ -72,7 +80,7 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
 
     /// Something moving behind the library, which also reacts to the pointer.
     enum Ambience: String, Codable, CaseIterable, Identifiable, Sendable {
-        case none, stars, grid, rain, embers, bubbles
+        case none, stars, grid, rain, embers, bubbles, moon, fog, ash, wisps
 
         var id: String { rawValue }
 
@@ -84,6 +92,10 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
             case .rain: "Code rain"
             case .embers: "Embers"
             case .bubbles: "Bubbles"
+            case .moon: "Moonrise"
+            case .fog: "Fog"
+            case .ash: "Falling ash"
+            case .wisps: "Wisps"
             }
         }
     }
@@ -117,6 +129,8 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
     var ambience: Ambience = .none
     /// Covers tilt under the pointer and catch the light.
     var tilt: Bool = true
+    /// How far the window's edges fall into shadow: 0 is none, 1 is black.
+    var vignette: Double = 0
 
     var isBuiltIn: Bool { Theme.builtIn.contains { $0.id == id } }
 
@@ -242,6 +256,32 @@ extension Theme {
             background: HexColor("#04222E"), backgroundEnd: HexColor("#010B12"), surface: HexColor("#3FE0C51A"),
             text: HexColor("#E6FFFA"), secondaryText: HexColor("#7FB5B8"), accent: HexColor("#3FE0C5"),
             backdrop: .artwork, backdropDim: 0.72, backdropBlur: 40, cornerRadius: 12, highlight: .lift, ambience: .bubbles
+        ),
+        Theme(
+            id: "blood-moon", name: "Blood Moon", author: "GameShelf", layout: .fan, typeface: .serif,
+            background: HexColor("#160709"), backgroundEnd: HexColor("#030102"), surface: HexColor("#C2182F1F"),
+            text: HexColor("#E9DFCF"), secondaryText: HexColor("#9A8478"), accent: HexColor("#C2182F"),
+            backdrop: .gradient, cornerRadius: 3, highlight: .glow, ambience: .moon, vignette: 0.6
+        ),
+        Theme(
+            id: "lanternlight", name: "Lanternlight", author: "GameShelf", layout: .scatter, typeface: .serif,
+            background: HexColor("#0E1416"), backgroundEnd: HexColor("#040708"), surface: HexColor("#E3C27A14"),
+            text: HexColor("#E6E0D0"), secondaryText: HexColor("#8E968F"), accent: HexColor("#E3C27A"),
+            backdrop: .artwork, backdropDim: 0.78, backdropBlur: 36, cornerRadius: 2, highlight: .lift,
+            ambience: .wisps, vignette: 0.55
+        ),
+        Theme(
+            id: "ashen", name: "Ashen", author: "GameShelf", layout: .scatter, typeface: .serif,
+            background: HexColor("#17171A"), backgroundEnd: HexColor("#070708"), surface: HexColor("#FFFFFF10"),
+            text: HexColor("#DAD6CF"), secondaryText: HexColor("#8A8782"), accent: HexColor("#D0703A"),
+            backdrop: .gradient, cornerRadius: 2, highlight: .lift, ambience: .ash, vignette: 0.5
+        ),
+        Theme(
+            id: "old-cathedral", name: "Old Cathedral", author: "GameShelf", layout: .fan, typeface: .serif,
+            background: HexColor("#0D1218"), backgroundEnd: HexColor("#030507"), surface: HexColor("#9FB4C814"),
+            text: HexColor("#DCE3EA"), secondaryText: HexColor("#7F8C99"), accent: HexColor("#B89B5E"),
+            backdrop: .artwork, backdropDim: 0.75, backdropBlur: 30, cornerRadius: 2, highlight: .outline,
+            ambience: .fog, vignette: 0.65
         ),
     ]
 
@@ -399,5 +439,6 @@ extension Theme {
         animations = value(.animations, base.animations)
         ambience = value(.ambience, base.ambience)
         tilt = value(.tilt, base.tilt)
+        vignette = value(.vignette, base.vignette)
     }
 }
