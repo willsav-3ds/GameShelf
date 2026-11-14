@@ -186,7 +186,7 @@ private struct ThemeSwatch: View {
         case .grid: "square.grid.3x3"
         case .shelf: "books.vertical"
         case .fan: "rectangle.portrait.on.rectangle.portrait.angled"
-        case .scatter: "square.on.square.dashed"
+        case .cloud: "circle.hexagongrid"
         }
     }
 

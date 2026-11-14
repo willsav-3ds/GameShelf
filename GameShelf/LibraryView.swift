@@ -19,6 +19,7 @@ struct LibraryView: View {
     @State private var newCollectionName = ""
     @State private var gamepad = GamepadInput()
     @State private var pointer = PointerField()
+    @State private var cloud = CloudMap()
     @FocusState private var hasKeyboardFocus: Bool
 
     private var theme: Theme { themes.current }
@@ -48,6 +49,7 @@ struct LibraryView: View {
             focusedGame: focus?.game,
             focusedByPointer: focusedByPointer,
             gridColumns: $gridColumns,
+            cloud: cloud,
             selectCollection: { switchTo($0) }
         )
 
@@ -56,7 +58,7 @@ struct LibraryView: View {
             case .showcase: ShowcaseLayout(context: context)
             case .carousel: CarouselLayout(context: context)
             case .fan: CarouselLayout(context: context, fanned: true)
-            case .scatter: ScatterLayout(context: context)
+            case .cloud: CloudLayout(context: context)
             case .grid: GridLayout(context: context)
             case .shelf: ShelfLayout(context: context)
             }
@@ -250,6 +252,15 @@ struct LibraryView: View {
             let target = index + dx + dy * gridColumns
             guard games.indices.contains(target) else { return }
             setFocus(focus.collection.id, games[target].id)
+        } else if theme.layout == .cloud {
+            // Moves to whichever cover lies that way. Past the top or bottom of the cloud is the next collection.
+            if let target = cloud.neighbor(of: focus.game.id, dx: dx, dy: dy) {
+                setFocus(focus.collection.id, target)
+            } else if dy != 0 {
+                let ids = collections.map(\.id)
+                guard let row = ids.firstIndex(of: focus.collection.id), ids.indices.contains(row + dy) else { return }
+                switchTo(ids[row + dy])
+            }
         } else if dy != 0 {
             let ids = collections.map(\.id)
             guard let row = ids.firstIndex(of: focus.collection.id), ids.indices.contains(row + dy) else { return }
@@ -268,6 +279,7 @@ struct LayoutContext {
     var focusedGame: Game?
     var focusedByPointer: Bool
     var gridColumns: Binding<Int>
+    var cloud: CloudMap
     var selectCollection: (CollectionID) -> Void
 
     func isFocused(_ game: Game, in collection: CollectionID) -> Bool {

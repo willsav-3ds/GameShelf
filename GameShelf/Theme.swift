@@ -15,8 +15,8 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
         case shelf
         /// A hand of cards fanned in an arc, one collection at a time.
         case fan
-        /// Covers strewn across a table at odd angles.
-        case scatter
+        /// Covers of different sizes packed together into one cluster.
+        case cloud
 
         var id: String { rawValue }
 
@@ -27,7 +27,7 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
             case .grid: "Grid"
             case .shelf: "Bookshelf"
             case .fan: "Fan"
-            case .scatter: "Scattered"
+            case .cloud: "Cloud"
             }
         }
 
@@ -38,7 +38,7 @@ struct Theme: Codable, Hashable, Identifiable, Sendable {
             case .grid: "Collections in a sidebar, a dense grid and a details panel."
             case .shelf: "Game cases standing on wooden shelves."
             case .fan: "A hand of covers fanned in an arc, one collection at a time."
-            case .scatter: "Covers strewn across a table at odd angles, nothing lined up."
+            case .cloud: "Covers gathered into one cluster, sized by how much you've played them."
             }
         }
     }
@@ -258,26 +258,26 @@ extension Theme {
             backdrop: .artwork, backdropDim: 0.72, backdropBlur: 40, cornerRadius: 12, highlight: .lift, ambience: .bubbles
         ),
         Theme(
-            id: "blood-moon", name: "Blood Moon", author: "GameShelf", layout: .fan, typeface: .serif,
+            id: "blood-moon", name: "Blood Moon", author: "GameShelf", layout: .carousel, typeface: .serif,
             background: HexColor("#160709"), backgroundEnd: HexColor("#030102"), surface: HexColor("#C2182F1F"),
             text: HexColor("#E9DFCF"), secondaryText: HexColor("#9A8478"), accent: HexColor("#C2182F"),
             backdrop: .gradient, cornerRadius: 3, highlight: .glow, ambience: .moon, vignette: 0.6
         ),
         Theme(
-            id: "lanternlight", name: "Lanternlight", author: "GameShelf", layout: .scatter, typeface: .serif,
+            id: "lanternlight", name: "Lanternlight", author: "GameShelf", layout: .cloud, typeface: .serif,
             background: HexColor("#0E1416"), backgroundEnd: HexColor("#040708"), surface: HexColor("#E3C27A14"),
             text: HexColor("#E6E0D0"), secondaryText: HexColor("#8E968F"), accent: HexColor("#E3C27A"),
             backdrop: .artwork, backdropDim: 0.78, backdropBlur: 36, cornerRadius: 2, highlight: .lift,
             ambience: .wisps, vignette: 0.55
         ),
         Theme(
-            id: "ashen", name: "Ashen", author: "GameShelf", layout: .scatter, typeface: .serif,
+            id: "ashen", name: "Ashen", author: "GameShelf", layout: .cloud, typeface: .serif,
             background: HexColor("#17171A"), backgroundEnd: HexColor("#070708"), surface: HexColor("#FFFFFF10"),
             text: HexColor("#DAD6CF"), secondaryText: HexColor("#8A8782"), accent: HexColor("#D0703A"),
             backdrop: .gradient, cornerRadius: 2, highlight: .lift, ambience: .ash, vignette: 0.5
         ),
         Theme(
-            id: "old-cathedral", name: "Old Cathedral", author: "GameShelf", layout: .fan, typeface: .serif,
+            id: "old-cathedral", name: "Old Cathedral", author: "GameShelf", layout: .showcase, typeface: .serif,
             background: HexColor("#0D1218"), backgroundEnd: HexColor("#030507"), surface: HexColor("#9FB4C814"),
             text: HexColor("#DCE3EA"), secondaryText: HexColor("#7F8C99"), accent: HexColor("#B89B5E"),
             backdrop: .artwork, backdropDim: 0.75, backdropBlur: 30, cornerRadius: 2, highlight: .outline,

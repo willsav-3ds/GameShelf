@@ -20,7 +20,7 @@ Installed Steam games appear alongside everything else. Mac games you own but ha
 
 ## Themes
 
-Fifteen themes are built in, across six layouts: Showcase, Carousel, Grid, Bookshelf, Fan and Scattered. Nine of them have a moving backdrop that reacts to the pointer, including four dark fantasy themes: Blood Moon, Lanternlight, Ashen and Old Cathedral.
+Fifteen themes are built in, across six layouts: Showcase, Carousel, Grid, Bookshelf, Fan and Cloud. Cloud gathers a collection into one cluster, with the games you've played most drawn biggest. Nine of them have a moving backdrop that reacts to the pointer, including four dark fantasy themes: Blood Moon, Lanternlight, Ashen and Old Cathedral.
 
 Covers tilt under the pointer, and the cover in a game's details can be grabbed and turned.
 

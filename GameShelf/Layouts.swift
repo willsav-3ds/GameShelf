@@ -561,110 +561,151 @@ private struct WoodGrain: View {
     }
 }
 
-// MARK: Scattered
+// MARK: Cloud
 
-/// Covers strewn across a table: each sits at its own angle and height, overlapping its neighbours.
-/// The selected one straightens up and comes to the top of the pile.
-struct ScatterLayout: View {
-    @Environment(\.theme) private var theme
-    let context: LayoutContext
+/// Where each cover sits in the cloud. A plain class shared with the library window, which needs the
+/// positions to move the selection toward whichever cover lies in a direction.
+@MainActor
+final class CloudMap {
+    private(set) var frames: [String: CGRect] = [:]
+    private var key = ""
 
-    var body: some View {
-        GeometryReader { proxy in
-            ScrollViewReader { scroller in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 46) {
-                        ForEach(context.collections) { collection in
-                            ScatterSection(collection: collection, context: context, availableWidth: proxy.size.width)
-                                .id(collection.id.key)
-                        }
-                    }
-                    .padding(.vertical, 34)
-                }
-                .onChange(of: context.focusedCollection) { _, id in
-                    // No anchor: only scroll as far as needed to bring the pile into view.
-                    guard let id, !context.focusedByPointer else { return }
-                    withAnimation(theme.animations ? .easeInOut(duration: 0.3) : nil) {
-                        scroller.scrollTo(id.key)
+    /// Packs one collection into a cluster that fits the area. The games you've played most are the
+    /// biggest and sit in the middle.
+    func place(_ games: [Game], in area: CGSize, coverScale: CGFloat) -> [String: CGRect] {
+        let newKey = "\(games.map { "\($0.id):\(Int($0.playtime))" }.joined(separator: "|"))#\(Int(area.width))x\(Int(area.height))#\(coverScale)"
+        guard newKey != key else { return frames }
+        key = newKey
+        frames = [:]
+        guard area.width > 0, area.height > 0, !games.isEmpty else { return frames }
+
+        let most = games.map { log(1 + $0.playtime / 60) }.max() ?? 0
+        let sized = games.map { game -> (game: Game, size: CGSize) in
+            let played = most > 0 ? log(1 + game.playtime / 60) / most : 0
+            // A little variety of their own, so a shelf of unplayed games still clusters instead of forming a grid.
+            let variety = Double(game.id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF } % 100) / 100
+            let height = 150 * (0.55 + 0.7 * played + 0.2 * variety)
+            return (game, CGSize(width: height * game.platform.caseAspect, height: height))
+        }
+        .sorted { $0.size.height > $1.size.height }
+
+        // Each cover takes the first free spot on a spiral out from the centre, stretched to the area's shape.
+        let stretch = max(min(area.width / area.height, 2.4), 1)
+        let gap: CGFloat = 9
+        var placed: [CGRect] = []
+        for item in sized {
+            var rect = CGRect.zero
+            for step in 0..<6000 {
+                let angle = Double(step) * 0.3
+                let radius = 3 * angle
+                rect = CGRect(
+                    x: cos(angle) * radius * stretch - item.size.width / 2, y: sin(angle) * radius - item.size.height / 2,
+                    width: item.size.width, height: item.size.height
+                )
+                let padded = rect.insetBy(dx: -gap, dy: -gap)
+                if !placed.contains(where: padded.intersects) { break }
+            }
+            placed.append(rect)
+        }
+        // The spiral leaves gaps, so everything then shuffles toward the middle until the covers are touching.
+        for _ in 0..<60 {
+            var moved = false
+            for index in placed.indices {
+                for shift in [CGSize(width: placed[index].midX > 0 ? -4 : 4, height: 0), CGSize(width: 0, height: placed[index].midY > 0 ? -4 : 4)] {
+                    let rect = placed[index]
+                    guard abs(shift.width == 0 ? rect.midY : rect.midX) > 4 else { continue }
+                    let padded = rect.offsetBy(dx: shift.width, dy: shift.height).insetBy(dx: -gap, dy: -gap)
+                    if !placed.indices.contains(where: { $0 != index && padded.intersects(placed[$0]) }) {
+                        placed[index] = rect.offsetBy(dx: shift.width, dy: shift.height)
+                        moved = true
                     }
                 }
             }
+            if !moved { break }
         }
+
+        // Then the whole cloud grows or shrinks to fill the area.
+        let bounds = placed.reduce(placed[0]) { $0.union($1) }
+        let scale = min(area.width / bounds.width, area.height / bounds.height, 1.5) * coverScale
+        for (item, rect) in zip(sized, placed) {
+            frames[item.game.id] = CGRect(
+                x: area.width / 2 + (rect.minX - bounds.midX) * scale, y: area.height / 2 + (rect.minY - bounds.midY) * scale,
+                width: rect.width * scale, height: rect.height * scale
+            )
+        }
+        return frames
+    }
+
+    /// The closest cover in a direction, favouring ones straight ahead.
+    func neighbor(of id: String, dx: Int, dy: Int) -> String? {
+        guard let from = frames[id] else { return nil }
+        var best: (id: String, cost: CGFloat)?
+        for (candidate, frame) in frames where candidate != id {
+            let along = (frame.midX - from.midX) * CGFloat(dx) + (frame.midY - from.midY) * CGFloat(dy)
+            let across = abs((frame.midX - from.midX) * CGFloat(dy)) + abs((frame.midY - from.midY) * CGFloat(dx))
+            guard along > 1, across < along * 2 else { continue }
+            let cost = along + across * 2
+            if cost < best?.cost ?? .infinity { best = (candidate, cost) }
+        }
+        return best?.id
     }
 }
 
-private struct ScatterSection: View {
+/// One collection at a time, gathered into a cluster of upright covers in different sizes.
+struct CloudLayout: View {
     @Environment(\.theme) private var theme
-    let collection: GameCollection
     let context: LayoutContext
-    let availableWidth: CGFloat
-
-    private let sideInset: CGFloat = 46
-    private let overlap: CGFloat = 10
-    private var height: CGFloat { 190 * theme.coverScale }
-
-    private func width(of game: Game) -> CGFloat { height * game.platform.caseAspect }
-
-    /// A stable value in -1...1 for a game, so the mess looks the same every launch.
-    private func jitter(_ game: Game, _ salt: Int) -> Double {
-        let total = game.id.unicodeScalars.reduce(salt &* 7919) { ($0 &* 31 &+ Int($1.value)) & 0xFFFFF }
-        return Double(total % 2001) / 1000 - 1
-    }
-
-    /// Fills each row with as many covers as fit, since every platform's case is a different width.
-    private var rows: [[Game]] {
-        let usable = max(availableWidth - sideInset * 2 - 60, 200)
-        var rows: [[Game]] = [[]]
-        var used: CGFloat = 0
-        for game in collection.games {
-            let next = width(of: game) - overlap
-            if used + next > usable, !rows[rows.count - 1].isEmpty {
-                rows.append([])
-                used = 0
-            }
-            rows[rows.count - 1].append(game)
-            used += next
-        }
-        return rows
-    }
+    @State private var hoveredID: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(collection.title)
-                        .font(theme.font(.title, weight: .bold))
-                    Text("\(collection.games.count)")
-                        .font(theme.font(.callout))
-                        .foregroundStyle(theme.secondaryText.color)
-                }
-                // A stroke that trails off, like a line drawn by hand.
-                LinearGradient(colors: [theme.accent.color, theme.accent.color.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 260, height: 2)
-            }
-            .rotationEffect(.degrees(-1.5), anchor: .leading)
-            .padding(.leading, sideInset)
+        let collection = context.collections.first { $0.id == context.focusedCollection }
+        VStack(spacing: 0) {
+            CollectionTabs(
+                collections: context.collections,
+                selected: context.focusedCollection,
+                select: context.selectCollection
+            )
+            .padding(.top, 14)
 
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                HStack(alignment: .center, spacing: -overlap) {
-                    ForEach(row) { game in
-                        let isFocused = context.isFocused(game, in: collection.id)
-                        CoverCard(
-                            game: game,
-                            collection: collection.id,
-                            size: CGSize(width: width(of: game), height: height),
-                            isFocused: isFocused,
-                            showsTitle: false
-                        )
-                        .rotationEffect(.degrees(isFocused ? 0 : jitter(game, 1) * 9))
-                        .offset(y: isFocused ? -6 : jitter(game, 2) * 22)
-                        .zIndex(isFocused ? 2 : jitter(game, 3))
-                        .animation(theme.animations ? .spring(duration: 0.3, bounce: 0.35) : nil, value: isFocused)
+            GeometryReader { proxy in
+                if let collection {
+                    let frames = context.cloud.place(collection.games, in: proxy.size, coverScale: theme.coverScale)
+                    ZStack(alignment: .topLeading) {
+                        ForEach(collection.games) { game in
+                            let frame = frames[game.id] ?? .zero
+                            let isFocused = context.isFocused(game, in: collection.id)
+                            CoverCard(game: game, collection: collection.id, size: frame.size, isFocused: isFocused, showsTitle: false)
+                                // The cover under the pointer swells and comes forward.
+                                .scaleEffect(theme.animations && hoveredID == game.id ? 1.12 : 1)
+                                .onHover { inside in
+                                    if inside { hoveredID = game.id } else if hoveredID == game.id { hoveredID = nil }
+                                }
+                                .position(x: frame.midX, y: frame.midY)
+                                .zIndex(isFocused ? 2 : (hoveredID == game.id ? 1 : 0))
+                        }
                     }
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                    .animation(theme.animations ? .spring(duration: 0.45, bounce: 0.2) : nil, value: collection.id)
+                    .animation(theme.animations ? .spring(duration: 0.25) : nil, value: hoveredID)
                 }
-                .padding(.vertical, 24)
-                // Rows start at different points so no edge lines up.
-                .padding(.leading, sideInset + (index % 2 == 0 ? 0 : 38) + CGFloat(index % 3) * 9)
+            }
+            .padding(.horizontal, 40)
+            .padding(.vertical, 22)
+
+            if let game = context.focusedGame {
+                VStack(spacing: 8) {
+                    Text(game.title)
+                        .font(theme.font(.title, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Text(GameStats.line(game, showPlaytime: theme.showPlaytime))
+                        .font(theme.font(.callout, weight: .medium))
+                        .foregroundStyle(theme.secondaryText.color)
+                    GameButtons(game: game)
+                        .padding(.top, 4)
+                }
+                .padding(.horizontal, 40)
+                .padding(.bottom, 26)
             }
         }
     }
