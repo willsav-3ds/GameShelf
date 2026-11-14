@@ -1,0 +1,343 @@
+import SwiftUI
+
+/// Where the pointer is over the library. A plain class rather than view state: the backdrop reads it
+/// once per frame, so moving the mouse never re-renders the window.
+@MainActor
+final class PointerField {
+    struct Sample {
+        /// 0...1 across the window, resting at the centre when the pointer is elsewhere.
+        var position = CGPoint(x: 0.5, y: 0.5)
+        /// 1 while the pointer is over the library, easing to 0 after it leaves.
+        var presence = 0.0
+    }
+
+    var size: CGSize = .zero
+    var location: CGPoint?
+    private var eased = Sample()
+    private var lastTime: TimeInterval?
+
+    /// The pointer eased toward where it really is, so effects glide instead of snapping.
+    func sample(at time: TimeInterval) -> Sample {
+        let elapsed = min(max(time - (lastTime ?? time), 0), 0.1)
+        lastTime = time
+        var goal = Sample()
+        if let location, size.width > 0, size.height > 0 {
+            goal = Sample(position: CGPoint(x: location.x / size.width, y: location.y / size.height), presence: 1)
+        }
+        let blend = 1 - exp(-elapsed * 6)
+        eased.position.x += (goal.position.x - eased.position.x) * blend
+        eased.position.y += (goal.position.y - eased.position.y) * blend
+        eased.presence += (goal.presence - eased.presence) * blend
+        return eased
+    }
+}
+
+/// The theme's moving backdrop, drawn over its colours or artwork. Everything is a pure function of
+/// time, so there's no simulation to keep in step and a paused frame still looks right.
+struct AmbientLayer: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let pointer: PointerField?
+    @State private var start = Date()
+
+    var body: some View {
+        if theme.ambience != .none {
+            // Stops drawing while another app is in front, which is whenever a game is running.
+            let paused = !theme.animations || reduceMotion || activeState == .inactive
+            // Code rain reads better at a terminal's pace, and it's the most drawing per frame.
+            let interval: Double? = theme.ambience == .rain ? 1.0 / 20 : nil
+            TimelineView(.animation(minimumInterval: interval, paused: paused)) { timeline in
+                let time = timeline.date.timeIntervalSince(start)
+                let sample = pointer?.sample(at: time) ?? PointerField.Sample()
+                Canvas { context, size in
+                    switch theme.ambience {
+                    case .none: break
+                    case .stars: drawStars(context, size: size, time: time, pointer: sample)
+                    case .grid: drawGrid(context, size: size, time: time, pointer: sample)
+                    case .rain: drawRain(context, size: size, time: time, pointer: sample)
+                    case .embers: drawEmbers(context, size: size, time: time, pointer: sample)
+                    case .bubbles: drawBubbles(context, size: size, time: time, pointer: sample)
+                    }
+                    drawPointerGlow(context, size: size, pointer: sample)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private var accent: Color { theme.accent.color }
+
+    /// A stable pseudo-random value in 0..<1 for a particle and one of its properties.
+    private func noise(_ index: Int, _ salt: Int) -> Double {
+        var value = UInt64(truncatingIfNeeded: (index &+ 1) &* 73_856_093 ^ (salt &+ 1) &* 19_349_663)
+        value = (value ^ (value >> 33)) &* 0xFF51_AFD7_ED55_8CCD
+        value = (value ^ (value >> 33)) &* 0xC4CE_B9FE_1A85_EC53
+        value ^= value >> 33
+        return Double(value >> 11) / Double(1 << 53)
+    }
+
+    private func fraction(_ value: Double) -> Double { value - value.rounded(.down) }
+
+    /// A soft light that follows the pointer.
+    private func drawPointerGlow(_ context: GraphicsContext, size: CGSize, pointer: PointerField.Sample) {
+        guard pointer.presence > 0.01 else { return }
+        var context = context
+        if !theme.isLight { context.blendMode = .plusLighter }
+        let center = CGPoint(x: pointer.position.x * size.width, y: pointer.position.y * size.height)
+        let radius: CGFloat = 340
+        context.fill(
+            Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)),
+            with: .radialGradient(
+                Gradient(colors: [accent.opacity(0.11 * pointer.presence), accent.opacity(0)]),
+                center: center, startRadius: 0, endRadius: radius
+            )
+        )
+    }
+
+    // MARK: Starfield
+
+    /// Twinkling stars in layers that shift against each other as the pointer moves.
+    private func drawStars(_ context: GraphicsContext, size: CGSize, time: Double, pointer: PointerField.Sample) {
+        for index in 0..<150 {
+            let depth = 0.25 + noise(index, 0) * 0.75
+            let x = fraction(noise(index, 1) + time * 0.003 * depth - (pointer.position.x - 0.5) * 0.05 * depth)
+            let y = noise(index, 2) - (pointer.position.y - 0.5) * 0.05 * depth
+            let twinkle = 0.55 + 0.45 * sin(time * (0.6 + noise(index, 3) * 1.8) + noise(index, 4) * 2 * .pi)
+            let radius = 0.5 + depth * 1.3
+            let color = index % 4 == 0 ? accent : theme.text.color
+            context.fill(
+                Path(ellipseIn: CGRect(x: x * size.width - radius, y: y * size.height - radius, width: radius * 2, height: radius * 2)),
+                with: .color(color.opacity(twinkle * depth))
+            )
+        }
+
+        // One shooting star every so often, from a different spot each time.
+        let period = 9.0
+        let cycle = Int((time / period).rounded(.down))
+        let progress = fraction(time / period) * period / 0.9
+        guard progress < 1 else { return }
+        let origin = CGPoint(x: (0.1 + noise(cycle, 5) * 0.7) * size.width, y: noise(cycle, 6) * 0.35 * size.height)
+        let travel = CGVector(dx: size.width * 0.26, dy: size.width * 0.12)
+        let head = CGPoint(x: origin.x + travel.dx * progress, y: origin.y + travel.dy * progress)
+        let tail = CGPoint(x: head.x - travel.dx * 0.3, y: head.y - travel.dy * 0.3)
+        var streak = Path()
+        streak.move(to: tail)
+        streak.addLine(to: head)
+        context.stroke(
+            streak,
+            with: .linearGradient(
+                Gradient(colors: [theme.text.color.opacity(0), theme.text.color.opacity(sin(progress * .pi))]),
+                startPoint: tail, endPoint: head
+            ),
+            style: StrokeStyle(lineWidth: 1.6, lineCap: .round)
+        )
+    }
+
+    // MARK: Neon grid
+
+    /// A striped sun setting over a floor of lines that rush toward you. The vanishing point follows the pointer.
+    private func drawGrid(_ context: GraphicsContext, size: CGSize, time: Double, pointer: PointerField.Sample) {
+        let horizon = size.height * 0.58
+        let lean = pointer.position.x - 0.5
+        let vanish = CGPoint(x: size.width * (0.5 - lean * 0.14), y: horizon)
+
+        let sunRadius = min(size.width, size.height) * 0.2
+        let sunCenter = CGPoint(x: size.width * (0.5 - lean * 0.04), y: horizon - sunRadius * 0.3)
+        let sunRect = CGRect(x: sunCenter.x - sunRadius, y: sunCenter.y - sunRadius, width: sunRadius * 2, height: sunRadius * 2)
+        var sun = context
+        sun.opacity = 0.5
+        sun.drawLayer { layer in
+            layer.clip(to: Path(CGRect(x: 0, y: 0, width: size.width, height: horizon)))
+            layer.fill(
+                Path(ellipseIn: sunRect),
+                with: .linearGradient(
+                    Gradient(colors: [Color(red: 1, green: 0.86, blue: 0.45), accent]),
+                    startPoint: CGPoint(x: sunCenter.x, y: sunRect.minY), endPoint: CGPoint(x: sunCenter.x, y: horizon)
+                )
+            )
+            // Gaps cut out of the lower half, widening as they sink.
+            layer.blendMode = .destinationOut
+            for band in 0..<5 {
+                let depth = (Double(band) + fraction(time * 0.12)) / 5
+                let y = sunCenter.y - sunRadius * 0.1 + depth * sunRadius * 1.1
+                layer.fill(Path(CGRect(x: sunRect.minX, y: y, width: sunRect.width, height: 1.5 + depth * 7)), with: .color(.black))
+            }
+        }
+
+        let floor = size.height - horizon
+        let fade = GraphicsContext.Shading.linearGradient(
+            Gradient(colors: [accent.opacity(0), accent.opacity(0.45)]),
+            startPoint: vanish, endPoint: CGPoint(x: vanish.x, y: size.height)
+        )
+        let spacing = size.width / 9
+        for column in -16...16 {
+            var line = Path()
+            line.move(to: vanish)
+            line.addLine(to: CGPoint(x: size.width / 2 + CGFloat(column) * spacing * 2.4 - lean * size.width * 0.3, y: size.height))
+            context.stroke(line, with: fade, lineWidth: 1)
+        }
+        let rows = 14
+        for row in 0..<rows {
+            let depth = (Double(row) + fraction(time * 0.6)) / Double(rows)
+            let y = horizon + floor * pow(depth, 2.4)
+            var line = Path()
+            line.move(to: CGPoint(x: 0, y: y))
+            line.addLine(to: CGPoint(x: size.width, y: y))
+            context.stroke(line, with: .color(accent.opacity(0.08 + 0.4 * depth)), lineWidth: 1)
+        }
+        // The glow where the floor meets the sky.
+        context.fill(
+            Path(CGRect(x: 0, y: horizon - 40, width: size.width, height: 80)),
+            with: .linearGradient(
+                Gradient(colors: [accent.opacity(0), accent.opacity(0.28), accent.opacity(0)]),
+                startPoint: CGPoint(x: 0, y: horizon - 40), endPoint: CGPoint(x: 0, y: horizon + 40)
+            )
+        )
+    }
+
+    // MARK: Code rain
+
+    private static let glyphs = Array("ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀ0123456789")
+
+    /// Falling columns of characters that burn brighter near the pointer.
+    private func drawRain(_ context: GraphicsContext, size: CGSize, time: Double, pointer: PointerField.Sample) {
+        var context = context
+        let cell: CGFloat = 20
+        let font = Font.system(size: 14, weight: .medium, design: .monospaced)
+        let trail = Self.glyphs.map { context.resolve(Text(String($0)).font(font).foregroundStyle(accent)) }
+        let heads = Self.glyphs.map { context.resolve(Text(String($0)).font(font).foregroundStyle(theme.text.color)) }
+        let rows = Int(size.height / cell) + 1
+        let pointerX = pointer.position.x * size.width
+
+        for column in 0..<Int(size.width / cell) + 1 where noise(column, 4) < 0.65 {
+            let x = (CGFloat(column) + 0.5) * cell
+            let length = 8 + Int(noise(column, 1) * 14)
+            let span = Double(rows + length)
+            let head = Int(fraction((time * (4 + noise(column, 0) * 8) + noise(column, 2) * span) / span) * span)
+            let boost = pointer.presence * max(0, 1 - abs(x - pointerX) / 180)
+            for step in 0..<length {
+                let row = head - step
+                guard row >= 0, row < rows else { continue }
+                // Each cell swaps its character now and then, on its own schedule.
+                let glyph = Int(noise(column &* 977 &+ row, Int(time * 0.7 + noise(column &* 977 &+ row, 9) * 50)) * Double(trail.count))
+                let strength = 1 - Double(step) / Double(length)
+                context.opacity = step == 0 ? 0.55 + 0.4 * boost : strength * (0.24 + 0.5 * boost)
+                context.draw(step == 0 ? heads[glyph] : trail[glyph], at: CGPoint(x: x, y: (CGFloat(row) + 0.5) * cell))
+            }
+        }
+    }
+
+    // MARK: Embers and bubbles
+
+    /// A particle rising from the bottom of the window, swaying as it goes and steering around the pointer.
+    private func rising(
+        _ index: Int, size: CGSize, time: Double, pointer: PointerField.Sample, speed: ClosedRange<Double>, sway: Double
+    ) -> (point: CGPoint, life: Double) {
+        let life = fraction(time * (speed.lowerBound + noise(index, 0) * (speed.upperBound - speed.lowerBound)) + noise(index, 1))
+        var x = noise(index, 2) * size.width + sin(time * (0.4 + noise(index, 3)) + noise(index, 4) * 2 * .pi) * sway * (0.5 + life)
+        var y = size.height * (1.05 - life * 1.1)
+        let dx = x - pointer.position.x * size.width
+        let dy = y - pointer.position.y * size.height
+        let distance = max(hypot(dx, dy), 1)
+        let push = pointer.presence * max(0, 1 - distance / 190) * 70
+        x += dx / distance * push
+        y += dy / distance * push
+        return (CGPoint(x: x, y: y), life)
+    }
+
+    private func drawEmbers(_ context: GraphicsContext, size: CGSize, time: Double, pointer: PointerField.Sample) {
+        var context = context
+        if !theme.isLight { context.blendMode = .plusLighter }
+        for index in 0..<70 {
+            let (point, life) = rising(index, size: size, time: time, pointer: pointer, speed: 0.03...0.09, sway: 30)
+            let radius = 1 + noise(index, 5) * 2.2
+            // Flickers, and fades in and out at each end of its climb.
+            let flicker = 0.7 + 0.3 * sin(time * (3 + noise(index, 7) * 5) + noise(index, 8) * 2 * .pi)
+            let alpha = sin(life * .pi) * (0.35 + 0.65 * noise(index, 6)) * flicker
+            let halo = radius * 5
+            context.fill(
+                Path(ellipseIn: CGRect(x: point.x - halo, y: point.y - halo, width: halo * 2, height: halo * 2)),
+                with: .radialGradient(
+                    Gradient(colors: [accent.opacity(alpha * 0.4), accent.opacity(0)]),
+                    center: point, startRadius: 0, endRadius: halo
+                )
+            )
+            context.fill(
+                Path(ellipseIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)),
+                with: .color(accent.opacity(alpha))
+            )
+        }
+    }
+
+    private func drawBubbles(_ context: GraphicsContext, size: CGSize, time: Double, pointer: PointerField.Sample) {
+        for index in 0..<36 {
+            let (point, life) = rising(index, size: size, time: time, pointer: pointer, speed: 0.02...0.05, sway: 22)
+            let radius = 3 + noise(index, 5) * 12
+            let alpha = sin(life * .pi) * (0.3 + 0.5 * noise(index, 6))
+            let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(accent.opacity(alpha * 0.1)))
+            context.stroke(Path(ellipseIn: rect), with: .color(accent.opacity(alpha * 0.7)), lineWidth: 1)
+            // The glint on its upper left.
+            let glint = radius * 0.22
+            context.fill(
+                Path(ellipseIn: CGRect(x: point.x - radius * 0.45 - glint, y: point.y - radius * 0.45 - glint, width: glint * 2, height: glint * 2)),
+                with: .color(theme.text.color.opacity(alpha * 0.8))
+            )
+        }
+    }
+}
+
+/// Tilts a cover under the pointer like a card pressed with a fingertip, with a sheen that follows it.
+struct PointerTilt: ViewModifier {
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let size: CGSize
+    var maxAngle: Double = 8
+    /// Lets you grab the cover and turn it. It swings back when you let go.
+    var draggable = false
+    /// The pointer's position over the cover, -1...1 on each axis.
+    @State private var lean: CGPoint?
+    @GestureState private var pull: CGSize = .zero
+
+    private var isEnabled: Bool { theme.tilt && theme.animations && !reduceMotion }
+
+    func body(content: Content) -> some View {
+        let yaw = min(max((lean?.x ?? 0) * maxAngle + pull.width * 0.45, -60), 60)
+        let pitch = min(max(-(lean?.y ?? 0) * maxAngle - pull.height * 0.3, -35), 35)
+        content
+            .overlay {
+                if let lean {
+                    RadialGradient(
+                        colors: [.white.opacity(0.3), .white.opacity(0)],
+                        center: UnitPoint(x: (lean.x + 1) / 2, y: (lean.y + 1) / 2),
+                        startRadius: 0,
+                        endRadius: max(size.width, size.height) * 0.75
+                    )
+                    .blendMode(.plusLighter)
+                    .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
+            }
+            .rotation3DEffect(.degrees(yaw), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+            .rotation3DEffect(.degrees(pitch), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
+            .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.6), value: lean)
+            .animation(.spring(response: 0.5, dampingFraction: 0.45), value: pull)
+            // Outside the rotation, so the tilt doesn't move the area being tracked.
+            .onContinuousHover { phase in
+                guard isEnabled, case .active(let location) = phase, size.width > 0, size.height > 0 else {
+                    lean = nil
+                    return
+                }
+                lean = CGPoint(
+                    x: min(max(location.x / size.width * 2 - 1, -1), 1),
+                    y: min(max(location.y / size.height * 2 - 1, -1), 1)
+                )
+            }
+            .gesture(
+                DragGesture(minimumDistance: 2).updating($pull) { value, pull, _ in pull = value.translation },
+                isEnabled: draggable && isEnabled
+            )
+    }
+}
