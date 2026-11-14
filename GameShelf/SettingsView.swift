@@ -384,8 +384,30 @@ private struct LibrarySettings: View {
                     }
                 }
             }
+            Section("About") {
+                LabeledContent("Version", value: Self.version)
+                LabeledContent("Running from") {
+                    Text(Bundle.main.bundlePath)
+                        .truncationMode(.middle)
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .help(Bundle.main.bundlePath)
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    /// "0.2 (2)", marked when it's a build run from Xcode rather than an installed release.
+    private static var version: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
+        #if DEBUG
+        return version + " · Debug build"
+        #else
+        return version
+        #endif
     }
 
     private func chooseN64Folder() {

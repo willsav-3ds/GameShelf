@@ -1,3 +1,5 @@
+<img src="GameShelf/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png" width="128" alt="GameShelf icon">
+
 # GameShelf
 
 A themeable game library for macOS. It gathers your DuckStation, PCSX2, Gopher64, Steam and Mac games, plus any decomps and recomps you add, into one window you can drive with a keyboard, mouse or controller.
