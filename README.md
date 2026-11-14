@@ -6,6 +6,7 @@ A themeable game library for macOS. It gathers your DuckStation, PCSX2, Gopher64
 
 ```sh
 brew tap willsav-3ds/gameshelf
+brew trust willsav-3ds/gameshelf
 brew install --cask gameshelf
 ```
 
